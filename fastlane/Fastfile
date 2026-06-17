@@ -1,0 +1,61 @@
+default_platform(:ios)
+
+# ShakeGasm iOS — build the bundled Capacitor app and ship it to TestFlight.
+# Signing is done with the App Store Connect API key (no Mac, no manual certs):
+# fastlane creates/fetches an Apple Distribution cert + an App Store provisioning
+# profile via the API, then builds and uploads.
+platform :ios do
+  desc "Build and upload to TestFlight"
+  lane :beta do
+    setup_ci # ephemeral keychain on CI runners
+
+    api_key = app_store_connect_api_key(
+      key_id: ENV["ASC_KEY_ID"],
+      issuer_id: ENV["ASC_ISSUER_ID"],
+      key_content: ENV["ASC_API_KEY_P8"],
+      is_key_content_base64: false
+    )
+
+    # Distribution cert + App Store profile for com.shakegasm.app.
+    cert(api_key: api_key, platform: "ios")
+    sigh(
+      api_key: api_key,
+      app_identifier: "com.shakegasm.app",
+      platform: "ios",
+      force: true
+    )
+    profile_name = lane_context[SharedValues::SIGH_NAME]
+
+    # Build number = next after TestFlight's latest.
+    next_build = latest_testflight_build_number(
+      api_key: api_key,
+      app_identifier: "com.shakegasm.app",
+      initial_build_number: 0
+    ) + 1
+    increment_build_number(build_number: next_build, xcodeproj: "ios/App/App.xcodeproj")
+
+    update_code_signing_settings(
+      path: "ios/App/App.xcodeproj",
+      use_automatic_signing: false,
+      team_id: ENV["APPLE_TEAM_ID"],
+      bundle_identifier: "com.shakegasm.app",
+      code_sign_identity: "Apple Distribution",
+      profile_name: profile_name
+    )
+
+    build_app(
+      workspace: "ios/App/App.xcworkspace",
+      scheme: "App",
+      export_method: "app-store",
+      export_options: {
+        provisioningProfiles: { "com.shakegasm.app" => profile_name }
+      }
+    )
+
+    upload_to_testflight(
+      api_key: api_key,
+      app_identifier: "com.shakegasm.app",
+      skip_waiting_for_build_processing: true
+    )
+  end
+end

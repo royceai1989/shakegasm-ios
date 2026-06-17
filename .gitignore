@@ -1,0 +1,11 @@
+node_modules/
+ios/
+.DS_Store
+*.log
+vendor/
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output
+*.mobileprovision
+*.p12
+*.p8

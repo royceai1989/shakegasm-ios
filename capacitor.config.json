@@ -1,0 +1,16 @@
+{
+  "appId": "com.shakegasm.app",
+  "appName": "ShakeGasm",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#0b0b0b"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "backgroundColor": "#0b0b0b",
+      "showSpinner": false
+    }
+  }
+}

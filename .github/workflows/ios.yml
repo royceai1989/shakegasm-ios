@@ -1,0 +1,70 @@
+name: iOS → TestFlight
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [ main ]
+    paths-ignore: [ '**.md', '.gitignore' ]
+
+concurrency:
+  group: ios-build
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    runs-on: macos-14
+    timeout-minutes: 50
+    steps:
+      - name: Checkout iOS shell
+        uses: actions/checkout@v4
+
+      - name: Checkout the private web app (read-only deploy key)
+        uses: actions/checkout@v4
+        with:
+          repository: royceai1989/shakegasm-app
+          ssh-key: ${{ secrets.WEBAPP_DEPLOY_KEY }}
+          path: _webapp
+
+      - name: Bundle web app into www/ (Path A — local, not remote)
+        run: |
+          rm -rf www && mkdir www
+          cp -R _webapp/. www/
+          rm -rf www/.git _webapp www/sounds www/screenshots www/admin.html www/.well-known
+          rm -f www/index.html.original www/index.html.simple www/audio-audit.html www/samples.html www/_headers
+          echo "Bundled www/ contents:" && ls -1 www | head -40
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install JS dependencies
+        run: npm install
+
+      - name: Add iOS platform + sync
+        run: |
+          npx cap add ios
+          npx cap sync ios
+
+      - name: Patch Info.plist (motion usage string + encryption exemption)
+        run: |
+          PLIST=ios/App/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :NSMotionUsageDescription string 'Detects how you shake your phone during the game.'" "$PLIST" 2>/dev/null || \
+          /usr/libexec/PlistBuddy -c "Set  :NSMotionUsageDescription 'Detects how you shake your phone during the game.'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST" 2>/dev/null || \
+          /usr/libexec/PlistBuddy -c "Set  :ITSAppUsesNonExemptEncryption false" "$PLIST"
+
+      - name: Install CocoaPods
+        run: cd ios/App && pod install
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+
+      - name: Build + upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bundle exec fastlane beta
