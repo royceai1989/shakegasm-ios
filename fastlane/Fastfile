@@ -1,9 +1,9 @@
 default_platform(:ios)
 
 # ShakeGasm iOS — build the bundled Capacitor app and ship it to TestFlight.
-# Signing is done with the App Store Connect API key (no Mac, no manual certs):
-# fastlane creates/fetches an Apple Distribution cert + an App Store provisioning
-# profile via the API, then builds and uploads.
+# Signing uses the App Store Connect API key ONLY (no Apple ID / 2FA / Spaceship):
+# Xcode automatic signing resolves the cert + provisioning profile through the
+# API key via `-allowProvisioningUpdates -authenticationKey*`.
 platform :ios do
   desc "Build and upload to TestFlight"
   lane :beta do
@@ -16,17 +16,7 @@ platform :ios do
       is_key_content_base64: false
     )
 
-    # Distribution cert + App Store profile for com.shakegasm.app.
-    cert(api_key: api_key, platform: "ios")
-    sigh(
-      api_key: api_key,
-      app_identifier: "com.shakegasm.app",
-      platform: "ios",
-      force: true
-    )
-    profile_name = lane_context[SharedValues::SIGH_NAME]
-
-    # Build number = next after TestFlight's latest.
+    # Build number = next after TestFlight's latest (API-key auth).
     next_build = latest_testflight_build_number(
       api_key: api_key,
       app_identifier: "com.shakegasm.app",
@@ -34,21 +24,28 @@ platform :ios do
     ) + 1
     increment_build_number(build_number: next_build, xcodeproj: "ios/App/App.xcodeproj")
 
+    # Switch the project to automatic signing under the team.
     update_code_signing_settings(
       path: "ios/App/App.xcodeproj",
-      use_automatic_signing: false,
-      team_id: ENV["APPLE_TEAM_ID"],
-      bundle_identifier: "com.shakegasm.app",
-      code_sign_identity: "Apple Distribution",
-      profile_name: profile_name
+      use_automatic_signing: true,
+      team_id: ENV["APPLE_TEAM_ID"]
     )
+
+    # Write the API key to disk so xcodebuild can use it for provisioning updates.
+    key_file = File.expand_path("asc_api_key.p8")
+    File.write(key_file, ENV["ASC_API_KEY_P8"])
 
     build_app(
       workspace: "ios/App/App.xcworkspace",
       scheme: "App",
       export_method: "app-store",
+      xcargs: "-allowProvisioningUpdates " \
+              "-authenticationKeyPath #{key_file} " \
+              "-authenticationKeyID #{ENV['ASC_KEY_ID']} " \
+              "-authenticationKeyIssuerID #{ENV['ASC_ISSUER_ID']}",
       export_options: {
-        provisioningProfiles: { "com.shakegasm.app" => profile_name }
+        signingStyle: "automatic",
+        teamID: ENV["APPLE_TEAM_ID"]
       }
     )
 
