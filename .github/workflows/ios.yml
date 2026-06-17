@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   ios:
-    runs-on: macos-14
+    runs-on: macos-latest
     timeout-minutes: 50
     steps:
       - name: Checkout iOS shell
@@ -24,6 +24,11 @@ jobs:
           repository: royceai1989/shakegasm-app
           ssh-key: ${{ secrets.WEBAPP_DEPLOY_KEY }}
           path: _webapp
+
+      - name: Select latest Xcode (iOS 26 SDK — required by App Store)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
 
       - name: Bundle web app into www/ (Path A — local, not remote)
         run: |
