@@ -1,0 +1,100 @@
+name: iOS audio self-test (simulator)
+
+# Boots the app in an iOS Simulator (same WebKit + Capacitor asset handler as a
+# real device) and reads back the on-launch audio self-test — proving whether
+# fetch / XHR / decode of the bundled voice clips actually work on iOS, without
+# needing a physical device or TestFlight. No code signing (simulator build).
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  audiotest:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout iOS shell
+        uses: actions/checkout@v4
+
+      - name: Checkout the private web app (read-only deploy key)
+        uses: actions/checkout@v4
+        with:
+          repository: royceai1989/shakegasm-app
+          ssh-key: ${{ secrets.WEBAPP_DEPLOY_KEY }}
+          path: _webapp
+
+      - name: Select latest Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Bundle web app into www/ (with sounds)
+        run: |
+          rm -rf www && mkdir www
+          cp -R _webapp/. www/
+          rm -rf www/.git _webapp www/screenshots www/admin.html www/.well-known
+          rm -f www/index.html.original www/index.html.simple www/audio-audit.html www/samples.html www/_headers
+          echo "www has sounds:" && ls -1 www | grep -c sounds && ls -1 www/sounds | head
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install JS dependencies
+        run: npm install
+
+      - name: Add iOS platform + sync
+        run: npx cap add ios && npx cap sync ios
+
+      - name: Install CocoaPods
+        run: cd ios/App && pod install
+
+      - name: Build for the simulator (no signing)
+        run: |
+          set -o pipefail
+          xcodebuild -workspace ios/App/App.xcworkspace -scheme App \
+            -configuration Debug -sdk iphonesimulator -derivedDataPath dd \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tail -25
+
+      - name: Boot a simulator
+        run: |
+          UDID=$(xcrun simctl list devices available --json | jq -r '[.devices[][] | select(.name|test("iPhone"))][0].udid')
+          echo "picked simulator $UDID"
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+
+      - name: Install + launch the app
+        run: |
+          APP=$(find dd/Build/Products -name 'App.app' -type d | head -1)
+          echo "app bundle: $APP"
+          test -d "$APP/public/sounds" && echo "sounds ARE inside the .app bundle ✓" || echo "WARNING: no sounds in .app bundle"
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl launch "$UDID" com.shakegasm.app
+
+      - name: Read the audio self-test result
+        run: |
+          for i in $(seq 1 30); do
+            sleep 3
+            DATA=$(xcrun simctl get_app_container "$UDID" com.shakegasm.app data 2>/dev/null || true)
+            F="$DATA/Documents/sg_selftest.json"
+            if [ -n "$DATA" ] && [ -f "$F" ]; then
+              echo "=== iOS AUDIO SELF-TEST RESULT ==="
+              cat "$F"; echo
+              node -e '
+                const r = require(process.argv[1]);
+                const loadOk = (r.fetchBytes > 0) || (typeof r.xhr === "number" && r.xhr > 0);
+                const decodeOk = r.decode && typeof r.decode === "object" && r.decode.dur > 0;
+                console.log("fetch:", r.fetch, " fetchBytes:", r.fetchBytes, " xhr:", r.xhr);
+                console.log("decode:", JSON.stringify(r.decode));
+                console.log("LOAD_OK =", loadOk && decodeOk);
+                process.exit(loadOk && decodeOk ? 0 : 1);
+              ' "$F"
+              exit $?
+            fi
+            echo "waiting for self-test file ($i/30)…"
+          done
+          echo "self-test file never appeared — dumping simulator log tail"
+          xcrun simctl spawn "$UDID" log show --last 2m --predicate 'processImagePath CONTAINS "App"' 2>/dev/null | grep -i "SG_SELFTEST" | tail -20 || true
+          exit 1
