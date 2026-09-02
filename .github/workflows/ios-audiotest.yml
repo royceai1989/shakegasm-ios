@@ -84,12 +84,12 @@ jobs:
               cat "$F"; echo
               node -e '
                 const r = require(process.argv[1]);
-                const loadOk = (r.fetchBytes > 0) || (typeof r.xhr === "number" && r.xhr > 0);
+                const clipOk = typeof r.fetchClip === "number" && r.fetchClip > 0;
                 const decodeOk = r.decode && typeof r.decode === "object" && r.decode.dur > 0;
-                console.log("fetch:", r.fetch, " fetchBytes:", r.fetchBytes, " xhr:", r.xhr);
+                console.log("fetch:", r.fetch, " fetchBytes:", r.fetchBytes, " xhr:", r.xhr, " fetchClip:", r.fetchClip);
                 console.log("decode:", JSON.stringify(r.decode));
-                console.log("LOAD_OK =", loadOk && decodeOk);
-                process.exit(loadOk && decodeOk ? 0 : 1);
+                console.log("LOAD_OK =", clipOk && decodeOk, " (fetchClip is the real game loader)");
+                process.exit(clipOk && decodeOk ? 0 : 1);
               ' "$F"
               exit $?
             fi
