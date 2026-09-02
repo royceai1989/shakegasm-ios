@@ -24,6 +24,15 @@ platform :ios do
       readonly: false
     )
 
+    # match names the profile "match AppStore <bundle-id>" — but it appends a
+    # numeric suffix when that canonical name is already taken on the portal (e.g.
+    # a stale profile left behind after a cert was revoked/regenerated). Sign
+    # against whatever name match actually produced and installed, never a
+    # hardcoded one, so a suffixed profile doesn't break the archive.
+    profile_name = (lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING] || {})["com.shakegasm.app"] ||
+                   ENV["sigh_com.shakegasm.app_appstore_profile-name"] ||
+                   "match AppStore com.shakegasm.app"
+
     next_build = latest_testflight_build_number(
       api_key: api_key,
       app_identifier: "com.shakegasm.app",
@@ -37,7 +46,7 @@ platform :ios do
       team_id: ENV["APPLE_TEAM_ID"],
       bundle_identifier: "com.shakegasm.app",
       code_sign_identity: "Apple Distribution",
-      profile_name: "match AppStore com.shakegasm.app"
+      profile_name: profile_name
     )
 
     build_app(
@@ -45,7 +54,7 @@ platform :ios do
       scheme: "App",
       export_method: "app-store",
       export_options: {
-        provisioningProfiles: { "com.shakegasm.app" => "match AppStore com.shakegasm.app" }
+        provisioningProfiles: { "com.shakegasm.app" => profile_name }
       }
     )
 
