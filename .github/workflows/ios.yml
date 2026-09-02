@@ -50,6 +50,9 @@ jobs:
           npx cap add ios
           npx cap sync ios
 
+      - name: Generate app icon + splash (ShakeGasm gradient S) into the asset catalog
+        run: npx --yes @capacitor/assets generate --ios
+
       - name: Patch Info.plist (motion usage string + encryption exemption)
         run: |
           PLIST=ios/App/App/Info.plist
