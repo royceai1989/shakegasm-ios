@@ -35,6 +35,9 @@ jobs:
           rm -rf www/.git _webapp www/screenshots www/admin.html www/.well-known
           rm -f www/index.html.original www/index.html.simple www/audio-audit.html www/samples.html www/_headers
           echo "www has sounds:" && ls -1 www | grep -c sounds && ls -1 www/sounds | head
+          # Enable the (production-dormant) audio self-test for this simulator run only.
+          perl -0pi -e 's/<head([^>]*)>/<head$1><script>window.__SG_SELFTEST__=true;<\/script>/i' www/index.html
+          grep -q '__SG_SELFTEST__=true' www/index.html && echo "self-test flag injected ✓" || { echo "FLAG INJECTION FAILED"; exit 1; }
 
       - uses: actions/setup-node@v4
         with:
